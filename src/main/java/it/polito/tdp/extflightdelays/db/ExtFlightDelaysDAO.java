@@ -7,13 +7,19 @@ import java.sql.SQLException;
 import java.util.ArrayList;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 
 import it.polito.tdp.extflightdelays.model.Airline;
 import it.polito.tdp.extflightdelays.model.Airport;
+import it.polito.tdp.extflightdelays.model.Archi;
 import it.polito.tdp.extflightdelays.model.Flight;
 
 public class ExtFlightDelaysDAO {
-
+/*
+ * SELECT  ID, ORIGIN_AIRPORT_ID,DESTINATION_AIRPORT_ID, DISTANCE, AVG(DISTANCE) AS a,COUNT(DISTANCE) 
+FROM flights WHERE DISTANCE>4000 
+group BY  ORIGIN_AIRPORT_ID,DESTINATION_AIRPORT_ID
+ */
 	public List<Airline> loadAllAirlines() {
 		String sql = "SELECT * from airlines";
 		List<Airline> result = new ArrayList<Airline>();
@@ -37,9 +43,9 @@ public class ExtFlightDelaysDAO {
 		}
 	}
 
-	public List<Airport> loadAllAirports() {
+	public void loadAllAirports(Map<Integer,Airport> idMap) {
 		String sql = "SELECT * FROM airports";
-		List<Airport> result = new ArrayList<Airport>();
+		
 
 		try {
 			Connection conn = ConnectDB.getConnection();
@@ -47,14 +53,16 @@ public class ExtFlightDelaysDAO {
 			ResultSet rs = st.executeQuery();
 
 			while (rs.next()) {
+				if(!idMap.containsKey(rs.getInt("ID"))) {
 				Airport airport = new Airport(rs.getInt("ID"), rs.getString("IATA_CODE"), rs.getString("AIRPORT"),
 						rs.getString("CITY"), rs.getString("STATE"), rs.getString("COUNTRY"), rs.getDouble("LATITUDE"),
 						rs.getDouble("LONGITUDE"), rs.getDouble("TIMEZONE_OFFSET"));
-				result.add(airport);
+				idMap.put(airport.getId(), airport);
+				}
 			}
 
 			conn.close();
-			return result;
+			
 
 		} catch (SQLException e) {
 			e.printStackTrace();
@@ -80,6 +88,46 @@ public class ExtFlightDelaysDAO {
 						rs.getDouble("ELAPSED_TIME"), rs.getInt("DISTANCE"),
 						rs.getTimestamp("ARRIVAL_DATE").toLocalDateTime(), rs.getDouble("ARRIVAL_DELAY"));
 				result.add(flight);
+			}
+
+			conn.close();
+			return result;
+
+		} catch (SQLException e) {
+			e.printStackTrace();
+			System.out.println("Errore connessione al database");
+			throw new RuntimeException("Error Connection Database");
+		}
+	}
+	
+	public List<Archi> getArchi(Map<Integer,Airport> idMap, int x){
+		List<Archi> result= new ArrayList<>();
+		String sql="SELECT  ID AS IdVolo, ORIGIN_AIRPORT_ID,DESTINATION_AIRPORT_ID, DISTANCE, AVG(DISTANCE) AS mediaDistanza, \r\n" + 
+				"COUNT(DISTANCE) AS numeroVoli \r\n"+
+				"FROM flights WHERE DISTANCE>? \r\n" + 
+				"group BY  ORIGIN_AIRPORT_ID,DESTINATION_AIRPORT_ID ";
+
+		try {
+			Connection conn = ConnectDB.getConnection();
+			PreparedStatement st = conn.prepareStatement(sql);
+			st.setLong(1, x );
+			ResultSet rs = st.executeQuery();
+
+			while (rs.next()) {
+				int idPartenza= rs.getInt("ORIGIN_AIRPORT_ID");
+				int idArrivo= rs.getInt("DESTINATION_AIRPORT_ID");
+				String id=idPartenza+"-"+idArrivo;
+				String idInverso=idArrivo+"-"+idPartenza;
+				if(idMap.containsKey(idPartenza) && idMap.containsKey(idArrivo)) {
+					for(Archi a: result) {
+						if(a.getId().equals(idInverso)) {
+							a.aggiornaMedia(rs.getDouble("mediaDistanza"), rs.getInt("numeroVoli"));
+						}
+					}
+					Archi arco= new Archi(id,idInverso,idMap.get(idPartenza),idMap.get(idArrivo),rs.getInt("mediaDistanza"), rs.getInt("numeroVoli"));
+					arco.setMedia(arco.getPeso());
+					result.add(arco);
+				}
 			}
 
 			conn.close();
